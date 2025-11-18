@@ -1,7 +1,7 @@
 # SAML Julia Package
 
-[![Tests](https://github.com/yourusername/SAML.jl/workflows/Tests/badge.svg)](https://github.com/yourusername/SAML.jl/actions)
-[![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://github.com/yourusername/SAML.jl#documentation)
+[![Tests](https://github.com/kuren/SAML.jl/workflows/Tests/badge.svg)](https://github.com/kuren/SAML.jl/actions)
+[![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://github.com/kuren/SAML.jl#documentation)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A pure Julia implementation of SAML 2.0 Service Provider (SP) client-side functionality for single sign-on (SSO) integration with SAML Identity Providers.
@@ -32,7 +32,7 @@ Or add directly from GitHub:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/yourusername/SAML.jl.git")
+Pkg.add(url="https://github.com/kuren/SAML.jl.git")
 ```
 
 ## Quick Start
@@ -162,7 +162,7 @@ Priority areas for contribution:
 ### Setup
 
 ```bash
-git clone https://github.com/yourusername/SAML.jl.git
+git clone https://github.com/kuren/SAML.jl.git
 cd SAML.jl
 julia --project -e "using Pkg; Pkg.instantiate()"
 ```
@@ -219,14 +219,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For issues, questions, or contributions, please:
 
-1. Check existing [Issues](https://github.com/yourusername/SAML.jl/issues)
+1. Check existing [Issues](https://github.com/kuren/SAML.jl/issues)
 2. Review the [Documentation](docs/)
 3. Create a new issue with detailed information
 
 ## Disclaimer
 
 This is a community-maintained package. While it follows SAML 2.0 standards, always test thoroughly before deploying to production. Security is critical - consider having the implementation reviewed by security experts.
-
----
-
-**Note**: Replace `yourusername` with your actual GitHub username in the URLs above.

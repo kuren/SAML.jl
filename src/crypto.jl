@@ -166,6 +166,10 @@ Verify an XML signature in a SAML assertion.
 
 # Returns
 - true if signature is valid, false otherwise
+
+# Note:
+The Signature element can be nested inside other elements (like Assertion).
+This function searches recursively to find it.
 """
 function verify_xml_signature(xml::String, certificate::String)::Bool
     try
@@ -177,8 +181,25 @@ function verify_xml_signature(xml::String, certificate::String)::Bool
         
         root = root_element(xml_doc)
         
-        # Find the Signature element
+        # Find the Signature element (may be nested inside Assertion or Response)
         signature_elem = query_element(root, "Signature")
+        
+        # If not found at root level, search inside Assertion
+        if signature_elem === nothing
+            assertion_elem = query_element(root, "Assertion")
+            if assertion_elem !== nothing
+                signature_elem = query_element(assertion_elem, "Signature")
+            end
+        end
+        
+        # If still not found, search inside Response (for Response-level signatures)
+        if signature_elem === nothing
+            response_elem = query_element(root, "Response")
+            if response_elem !== nothing
+                signature_elem = query_element(response_elem, "Signature")
+            end
+        end
+        
         if signature_elem === nothing
             return false
         end
@@ -189,7 +210,6 @@ function verify_xml_signature(xml::String, certificate::String)::Bool
             return false
         end
         signature_b64 = get_element_text(sig_value_elem)
-        signature_bytes = base64decode(signature_b64)
         
         # Extract the data that was signed (the parent element without the signature)
         # For SAML assertions, this is typically the Assertion element

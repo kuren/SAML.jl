@@ -72,34 +72,51 @@ function verify_signature(data::String, signature::String, certificate::String, 
         # Decode the signature from Base64
         signature_bytes = base64decode(signature)
         
-        # Parse the certificate
-        cert = OpenSSL.X509Certificate(certificate)
-        public_key = OpenSSL.EvpPKey(cert)
+        # For robust RSA signature verification, we use the openssl command-line tool
+        # This is more reliable than trying to use OpenSSL.jl's limited API
         
-        # Determine hash algorithm
-        hash_type = if startswith(algorithm, "RSA-SHA256")
-            OpenSSL.EvpSHA256
-        elseif startswith(algorithm, "RSA-SHA1")
-            OpenSSL.EvpSHA1
-        elseif startswith(algorithm, "RSA-SHA512")
-            OpenSSL.EvpSHA512
-        else
-            OpenSSL.EvpSHA256  # Default
-        end
+        # Write temporary files for verification
+        data_file = tempname()
+        sig_file = tempname()
+        cert_file = tempname()
         
-        # Create digest context and compute digest
-        ctx = OpenSSL.EvpDigestContext(hash_type)
-        OpenSSL.digest_init(ctx)
-        OpenSSL.digest_update(ctx, Vector{UInt8}(data))
-        digest = OpenSSL.digest_final(ctx)
-        
-        # Verify the signature
         try
-            # Try to verify - this will throw if verification fails
-            result = OpenSSL.verify(public_key, digest, signature_bytes)
-            return true
-        catch
-            return false
+            # Write data to file
+            write(data_file, data)
+            
+            # Write signature to file
+            write(sig_file, signature_bytes)
+            
+            # Write certificate to file
+            write(cert_file, certificate)
+            
+            # Use openssl command to verify the signature
+            # Convert signature algorithm to openssl format
+            digest_algo = if startswith(algorithm, "RSA-SHA256")
+                "sha256"
+            elseif startswith(algorithm, "RSA-SHA1")
+                "sha1"
+            elseif startswith(algorithm, "RSA-SHA512")
+                "sha512"
+            else
+                "sha256"
+            end
+            
+            # Run openssl verify command
+            cmd = `openssl dgst -$digest_algo -verify <(openssl x509 -in $cert_file -noout -pubkey) -signature $sig_file $data_file`
+            
+            try
+                run(cmd, wait=true)
+                return true
+            catch
+                return false
+            end
+            
+        finally
+            # Clean up temporary files
+            try; rm(data_file); catch; end
+            try; rm(sig_file); catch; end
+            try; rm(cert_file); catch; end
         end
         
     catch e

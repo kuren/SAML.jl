@@ -289,3 +289,299 @@ function test_configuration(settings::SAMLSettings)
     println("=" * 50)
     println("Configuration test complete!")
 end
+
+# ============================================================================
+# Example 8: Validating SAML Responses with Certificate Verification
+# ============================================================================
+
+"""
+    validate_with_certificate(saml_response_b64::String, idp_cert::String)
+
+Validate a SAML response using the IdP's full X.509 certificate.
+
+This function performs complete validation including:
+- Certificate structure validation
+- XML signature verification
+- Assertion validation
+- Time condition checks
+- User attribute extraction
+
+# Arguments
+- `saml_response_b64`: The SAMLResponse value from browser (base64-encoded)
+- `idp_cert`: The IdP's X.509 certificate in PEM format
+
+# Returns
+- `(is_valid::Bool, auth::SAMLAuth)`: Validation result and auth handler
+"""
+function validate_with_certificate(saml_response_b64::String, idp_cert::String)
+    # Configure SAML settings with the IdP certificate
+    settings = SAMLSettings(
+        SPSettings(
+            "https://myapp.example.com/metadata/",
+            Dict("url" => "https://myapp.example.com/saml/acs",
+                 "binding" => BINDING_HTTP_POST),
+            Dict("url" => "https://myapp.example.com/saml/sls",
+                 "binding" => BINDING_HTTP_REDIRECT),
+            NAMEID_FORMAT_UNSPECIFIED,
+            "", ""  # SP cert/key only needed if SP signs
+        ),
+        IdPSettings(
+            "https://idp.example.com/metadata/",
+            Dict("url" => "https://idp.example.com/sso"),
+            Dict("url" => "https://idp.example.com/slo"),
+            idp_cert,  # The certificate for signature verification
+            "",        # No fingerprint
+            "sha1"
+        ),
+        SecuritySettings(
+            false, false,          # Don't require SP to sign
+            true, true,            # Require assertions and messages to be signed
+            RSA_SHA256, SHA256,    # Use SHA256 for signatures/digests
+            true                   # Reject deprecated algorithms
+        ),
+        strict = true,   # Enforce strict SAML compliance
+        debug = false    # Set to true for detailed validation logs
+    )
+    
+    # Create request data from the POST
+    request_data = Dict(
+        "http_host" => "myapp.example.com",
+        "script_name" => "/saml/acs",
+        "get_data" => Dict(),
+        "post_data" => Dict("SAMLResponse" => saml_response_b64),
+        "https" => "on",
+        "request_uri" => "/saml/acs"
+    )
+    
+    # Initialize SAML handler
+    auth = SAMLAuth(settings, request_data)
+    
+    # Process and validate the response (verifies signature using certificate)
+    is_valid = process_response(auth)
+    
+    # Print results
+    if is_valid
+        println("\n✅ SUCCESS! SAML Response is VALID and signature verified\n")
+        println("Authenticated user attributes:")
+        
+        attributes = get_attributes(auth)
+        for (key, values) in attributes
+            println("  $key => $(join(values, ", "))")
+        end
+        
+    else
+        println("\n❌ FAILED! SAML Response validation failed\n")
+        println("Errors:")
+        for error in auth.errors
+            println("  - $error")
+        end
+    end
+    
+    return is_valid, auth
+end
+
+"""
+    validate_with_fingerprint(saml_response_b64::String, idp_fingerprint::String, algorithm::String="sha256")
+
+Validate a SAML response using a certificate fingerprint (more secure).
+
+The certificate is extracted from the response and its fingerprint is verified
+against the expected fingerprint. This avoids storing the full certificate.
+
+# Arguments
+- `saml_response_b64`: The SAMLResponse value from browser (base64)
+- `idp_fingerprint`: Expected certificate fingerprint (e.g., "AA:BB:CC:DD:...")
+- `algorithm`: Hash algorithm ("sha1" or "sha256")
+
+# Returns
+- `(is_valid::Bool, auth::SAMLAuth)`: Validation result and auth handler
+"""
+function validate_with_fingerprint(saml_response_b64::String, idp_fingerprint::String, algorithm::String="sha256")
+    settings = SAMLSettings(
+        SPSettings(
+            "https://myapp.example.com/metadata/",
+            Dict("url" => "https://myapp.example.com/saml/acs",
+                 "binding" => BINDING_HTTP_POST),
+            Dict("url" => "https://myapp.example.com/saml/sls",
+                 "binding" => BINDING_HTTP_REDIRECT),
+            NAMEID_FORMAT_UNSPECIFIED,
+            "", ""
+        ),
+        IdPSettings(
+            "https://idp.example.com/metadata/",
+            Dict("url" => "https://idp.example.com/sso"),
+            Dict("url" => "https://idp.example.com/slo"),
+            "",                    # No full certificate
+            idp_fingerprint,       # Use fingerprint instead
+            algorithm              # SHA1 or SHA256
+        ),
+        SecuritySettings(
+            false, false, true, true,
+            RSA_SHA256, SHA256, true
+        ),
+        strict = true,
+        debug = false
+    )
+    
+    request_data = Dict(
+        "http_host" => "myapp.example.com",
+        "script_name" => "/saml/acs",
+        "get_data" => Dict(),
+        "post_data" => Dict("SAMLResponse" => saml_response_b64),
+        "https" => "on",
+        "request_uri" => "/saml/acs"
+    )
+    
+    auth = SAMLAuth(settings, request_data)
+    is_valid = process_response(auth)
+    
+    if is_valid
+        println("\n✅ SUCCESS! SAML Response is VALID (fingerprint verified)\n")
+        println("Authenticated user attributes:")
+        
+        attributes = get_attributes(auth)
+        for (key, values) in attributes
+            println("  $key => $(join(values, ", "))")
+        end
+        
+    else
+        println("\n❌ FAILED! SAML Response validation failed\n")
+        println("Errors:")
+        for error in auth.errors
+            println("  - $error")
+        end
+    end
+    
+    return is_valid, auth
+end
+
+"""
+    extract_and_save_idp_certificate(saml_response_b64::String, output_file::String)
+
+Extract the IdP certificate from a SAML response and save it to a file.
+
+This is useful for getting the certificate from the first successful login.
+
+# Arguments
+- `saml_response_b64`: The SAMLResponse from browser (base64-encoded)
+- `output_file`: File path to save the certificate
+
+# Returns
+- Certificate string or nothing if extraction fails
+"""
+function extract_and_save_idp_certificate(saml_response_b64::String, output_file::String)
+    try
+        decoded = base64decode(saml_response_b64)
+        xml_string = String(decoded)
+        
+        cert = extract_certificate_from_xml(xml_string)
+        
+        if cert !== nothing
+            write(output_file, cert)
+            println("✅ Certificate extracted and saved to: $output_file")
+            return cert
+        else
+            println("❌ Could not extract certificate from response")
+            return nothing
+        end
+        
+    catch e
+        println("❌ Error extracting certificate: $(e.msg)")
+        return nothing
+    end
+end
+
+"""
+    verify_certificate_fingerprint(cert::String, expected_fingerprint::String, algorithm::String="sha256")
+
+Verify that a certificate's fingerprint matches the expected value.
+
+Useful for manual verification or testing.
+
+# Arguments
+- `cert`: X.509 certificate in PEM format
+- `expected_fingerprint`: Expected fingerprint value
+- `algorithm`: Hash algorithm ("sha1" or "sha256")
+
+# Returns
+- true if fingerprint matches, false otherwise
+"""
+function verify_certificate_fingerprint(cert::String, expected_fingerprint::String, algorithm::String="sha256")
+    actual_fingerprint = calculate_x509_fingerprint(cert, algorithm)
+    
+    if actual_fingerprint == expected_fingerprint
+        println("✅ Certificate fingerprint MATCHES!")
+        return true
+    else
+        println("❌ Certificate fingerprint DOES NOT match!")
+        println("  Expected: $expected_fingerprint")
+        println("  Actual:   $actual_fingerprint")
+        return false
+    end
+end
+
+# ============================================================================
+# Example 9: How to Extract and Validate SAML Responses
+# ============================================================================
+
+"""
+    decode_saml_response(saml_response_b64::String)
+
+Decode a base64-encoded SAML response to see the actual XML.
+
+Useful for debugging or extracting the certificate manually.
+
+# Arguments
+- `saml_response_b64`: Base64-encoded SAML response
+
+# Prints
+- The decoded XML content
+"""
+function decode_saml_response(saml_response_b64::String)
+    decoded = base64decode(saml_response_b64)
+    xml_string = String(decoded)
+    println(xml_string)
+end
+
+"""
+SAML Response Validation Workflow:
+
+1. EXTRACT the SAML Response from browser:
+   - Open Dev Tools (F12)
+   - Go to Network tab
+   - Find POST request to /saml/acs
+   - Copy the SAMLResponse parameter (long base64 string)
+
+2. GET the IdP certificate:
+   Option A: Extract from response (automated)
+      decoded = base64decode(saml_response)
+      cert = extract_certificate_from_xml(String(decoded))
+   
+   Option B: Get from IdP metadata or provider
+      Ask your IdP for their SAML metadata or certificate
+   
+   Option C: Use certificate fingerprint (most secure)
+      Ask your IdP for their certificate fingerprint (SHA1 or SHA256)
+
+3. VALIDATE the response:
+   # Using full certificate:
+   idp_cert = read("idp-certificate.pem", String)
+   is_valid, auth = validate_with_certificate(saml_response, idp_cert)
+   
+   # OR using fingerprint:
+   fingerprint = "AA:BB:CC:DD:..."
+   is_valid, auth = validate_with_fingerprint(saml_response, fingerprint)
+
+4. EXTRACT user information:
+   if is_valid
+       attributes = get_attributes(auth)
+       email = get_attribute(auth, "email")
+       # Create session, set cookies, etc.
+   end
+
+BENEFITS OF THE THREE VALIDATION APPROACHES:
+
+- Full Certificate: Works with any IdP, but requires storing/managing certificates
+- Fingerprint: Most secure, simpler, but requires IdP to provide fingerprint upfront
+- Extract from Response: Good for initial setup, but fingerprint method is safer for ongoing use
+"""

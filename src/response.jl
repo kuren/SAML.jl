@@ -217,8 +217,31 @@ function validate_saml_response(response::SAMLResponse, settings::SAMLSettings,
         end
     end
     
-    # Signature validation would go here
-    # This requires cryptographic verification with xmlsec1 bindings
+    # Verify XML signature if required
+    if settings.security.want_assertions_signed && !isempty(response.xml)
+        # Extract certificate from response if present
+        cert_from_response = extract_certificate_from_xml(response.xml)
+        
+        # Get the certificate to use for verification
+        cert_to_use = if cert_from_response !== nothing
+            cert_from_response
+        elseif !isempty(settings.idp.x509_cert)
+            settings.idp.x509_cert
+        else
+            nothing
+        end
+        
+        if cert_to_use === nothing
+            push!(response.errors, "No certificate available for signature verification")
+            return false
+        end
+        
+        # Verify the XML signature
+        if !verify_xml_signature(response.xml, cert_to_use)
+            push!(response.errors, "SAML Response signature is invalid or could not be verified")
+            return false
+        end
+    end
     
     response.is_valid = true
     return true

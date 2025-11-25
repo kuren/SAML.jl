@@ -1,28 +1,4 @@
 """
-    SAML type definitions and data structures for Service Provider implementations.
-"""
-
-"""
-    SAMLSettings
-
-Main configuration container for SAML Service Provider.
-
-# Fields
-- `sp::SPSettings`: Service Provider configuration
-- `idp::IdPSettings`: Identity Provider configuration
-- `security::SecuritySettings`: Security settings for signing/encryption
-- `strict::Bool`: Whether to enforce strict SAML compliance
-- `debug::Bool`: Whether to enable debug output
-"""
-mutable struct SAMLSettings
-    sp::SPSettings
-    idp::IdPSettings
-    security::SecuritySettings
-    strict::Bool
-    debug::Bool
-end
-
-"""
     SPSettings
 
 Service Provider configuration.
@@ -88,6 +64,30 @@ mutable struct SecuritySettings
     signature_algorithm::String
     digest_algorithm::String
     reject_deprecated_algorithm::Bool
+end
+
+"""
+    SAML type definitions and data structures for Service Provider implementations.
+"""
+
+"""
+    SAMLSettings
+
+Main configuration container for SAML Service Provider.
+
+# Fields
+- `sp::SPSettings`: Service Provider configuration
+- `idp::IdPSettings`: Identity Provider configuration
+- `security::SecuritySettings`: Security settings for signing/encryption
+- `strict::Bool`: Whether to enforce strict SAML compliance
+- `debug::Bool`: Whether to enable debug output
+"""
+mutable struct SAMLSettings
+    sp::SPSettings
+    idp::IdPSettings
+    security::SecuritySettings
+    strict::Bool
+    debug::Bool
 end
 
 """

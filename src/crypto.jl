@@ -22,22 +22,28 @@ Sign data with a private key using RSA.
 """
 function sign_data(data::String, private_key::String, algorithm::String)::String
     try
-        # Parse the private key
-        key = OpenSSL.load_key(private_key)
+        # Parse the private key - create EvpPKey from PEM
+        key = OpenSSL.EvpPKey(private_key)
         
         # Determine hash algorithm
-        hash_algo = if startswith(algorithm, "RSA-SHA256")
-            OpenSSL.SHA256
+        hash_type = if startswith(algorithm, "RSA-SHA256")
+            OpenSSL.EvpSHA256
         elseif startswith(algorithm, "RSA-SHA1")
-            OpenSSL.SHA1
+            OpenSSL.EvpSHA1
         elseif startswith(algorithm, "RSA-SHA512")
-            OpenSSL.SHA512
+            OpenSSL.EvpSHA512
         else
-            OpenSSL.SHA256  # Default to SHA256
+            OpenSSL.EvpSHA256  # Default to SHA256
         end
         
-        # Sign the data
-        signature_bytes = OpenSSL.sign(key, hash_algo, Vector{UInt8}(data))
+        # Create digest context and sign
+        ctx = OpenSSL.EvpDigestContext(hash_type)
+        OpenSSL.digest_init(ctx)
+        OpenSSL.digest_update(ctx, Vector{UInt8}(data))
+        digest = OpenSSL.digest_final(ctx)
+        
+        # Sign the digest - use RSA
+        signature_bytes = OpenSSL.sign(key, digest)
         
         # Return Base64-encoded signature
         return String(base64encode(signature_bytes))
@@ -66,25 +72,35 @@ function verify_signature(data::String, signature::String, certificate::String, 
         # Decode the signature from Base64
         signature_bytes = base64decode(signature)
         
-        # Extract the public key from the certificate
-        cert = OpenSSL.load_cert(certificate)
-        public_key = OpenSSL.get_pubkey(cert)
+        # Parse the certificate
+        cert = OpenSSL.X509Certificate(certificate)
+        public_key = OpenSSL.EvpPKey(cert)
         
         # Determine hash algorithm
-        hash_algo = if startswith(algorithm, "RSA-SHA256")
-            OpenSSL.SHA256
+        hash_type = if startswith(algorithm, "RSA-SHA256")
+            OpenSSL.EvpSHA256
         elseif startswith(algorithm, "RSA-SHA1")
-            OpenSSL.SHA1
+            OpenSSL.EvpSHA1
         elseif startswith(algorithm, "RSA-SHA512")
-            OpenSSL.SHA512
+            OpenSSL.EvpSHA512
         else
-            OpenSSL.SHA256  # Default
+            OpenSSL.EvpSHA256  # Default
         end
         
-        # Verify the signature
-        is_valid = OpenSSL.verify(public_key, hash_algo, Vector{UInt8}(data), signature_bytes)
+        # Create digest context and compute digest
+        ctx = OpenSSL.EvpDigestContext(hash_type)
+        OpenSSL.digest_init(ctx)
+        OpenSSL.digest_update(ctx, Vector{UInt8}(data))
+        digest = OpenSSL.digest_final(ctx)
         
-        return is_valid
+        # Verify the signature
+        try
+            # Try to verify - this will throw if verification fails
+            result = OpenSSL.verify(public_key, digest, signature_bytes)
+            return true
+        catch
+            return false
+        end
         
     catch e
         # Signature verification failed
@@ -122,8 +138,10 @@ function sign_xml_element(element_xml::String, reference_uri::String, private_ke
                                        r"\s" => "")
         
         # Calculate digest of the signed element
-        digest_algo = "sha256"
-        digest_bytes = OpenSSL.digest(OpenSSL.SHA256, Vector{UInt8}(element_xml))
+        ctx = OpenSSL.EvpDigestContext(OpenSSL.EvpSHA256)
+        OpenSSL.digest_init(ctx)
+        OpenSSL.digest_update(ctx, Vector{UInt8}(element_xml))
+        digest_bytes = OpenSSL.digest_final(ctx)
         digest_b64 = String(base64encode(digest_bytes))
         
         signature_xml = """
@@ -244,7 +262,25 @@ function extract_certificate_from_xml(xml::String)::Union{String, Nothing}
         root = root_element(xml_doc)
         
         # Look for Signature/KeyInfo/X509Data/X509Certificate
+        # Try at root level first
         signature = query_element(root, "Signature")
+        
+        # If not found at root, search inside Assertion
+        if signature === nothing
+            assertion_elem = query_element(root, "Assertion")
+            if assertion_elem !== nothing
+                signature = query_element(assertion_elem, "Signature")
+            end
+        end
+        
+        # If still not found, search inside Response
+        if signature === nothing
+            response_elem = query_element(root, "Response")
+            if response_elem !== nothing
+                signature = query_element(response_elem, "Signature")
+            end
+        end
+        
         if signature === nothing
             return nothing
         end

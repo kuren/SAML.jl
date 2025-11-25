@@ -58,8 +58,8 @@ end
         false,
         false,
         false,
-        RSA_SHA256,
-        SHA256,
+        SAML.RSA_SHA256,
+        SAML.SHA256,
         true
     )
     
@@ -67,7 +67,7 @@ end
     
     @test settings.sp.entity_id == "https://example.com/metadata/"
     @test settings.idp.entity_id == "https://idp.example.com/metadata/"
-    @test settings.security.signature_algorithm == RSA_SHA256
+    @test settings.security.signature_algorithm == SAML.RSA_SHA256
 end
 
 @testset "SAML Auth Handler" begin
@@ -94,8 +94,8 @@ end
         false,
         false,
         false,
-        RSA_SHA256,
-        SHA256,
+        SAML.RSA_SHA256,
+        SAML.SHA256,
         true
     )
     

@@ -3,6 +3,7 @@
 """
 
 using Base64
+using CodecZlib
 using SHA
 using Dates
 
@@ -18,8 +19,10 @@ Deflate and Base64 encode a string (used for HTTP-Redirect binding).
 - Deflate-compressed and Base64-encoded string
 """
 function deflate_and_base64_encode(data::String)::String
-    # For now, just Base64 encode (deflate requires separate library)
-    encoded = base64encode(data)
+    # Deflate compress the string
+    compressed = transcode(DeflateCompressor, Vector{UInt8}(data))
+    # Base64 encode the compressed data
+    encoded = base64encode(compressed)
     return String(encoded)
 end
 
@@ -35,9 +38,11 @@ Base64 decode and inflate a string (reverse of deflate_and_base64_encode).
 - Decoded and uncompressed string
 """
 function decode_base64_and_inflate(encoded::String)::String
-    # For now, just Base64 decode (deflate requires separate library)
-    decoded = base64decode(encoded)
-    return String(decoded)
+    # Base64 decode the string
+    compressed = base64decode(encoded)
+    # Inflate (decompress) the data
+    decompressed = transcode(DeflateDecompressor, compressed)
+    return String(decompressed)
 end
 
 """
